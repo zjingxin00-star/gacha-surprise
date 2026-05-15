@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>💗 扭蛋机 · 专属惊喜</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <!-- 二维码库 CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+  <!-- 背景装饰 -->
+  <div class="bg-decoration">
+    <div class="floating-heart heart-1">💕</div>
+    <div class="floating-heart heart-2">💖</div>
+    <div class="floating-heart heart-3">💗</div>
+    <div class="floating-heart heart-4">💝</div>
+    <div class="floating-heart heart-5">✨</div>
+    <div class="floating-heart heart-6">🌟</div>
+    <div class="floating-heart heart-7">💫</div>
+    <div class="floating-heart heart-8">🎀</div>
+  </div>
+
+  <!-- 分享按钮 -->
+  <button class="share-btn" id="shareBtn" title="分享给 Ta">
+    <span class="share-icon">📤</span>
+    <span class="share-label">分享</span>
+  </button>
+
+  <!-- 主容器 -->
+  <div class="main-container">
+
+    <!-- 标题 -->
+    <h1 class="title">
+      <span class="title-icon">🎪</span>
+      扭蛋惊喜机
+      <span class="title-icon">🎪</span>
+    </h1>
+    <p class="subtitle">点击按钮，抽出属于你的那颗扭蛋吧 💗</p>
+
+    <!-- 扭蛋机 -->
+    <div class="gacha-machine" id="gachaMachine">
+      <!-- 顶部圆顶 -->
+      <div class="dome">
+        <div class="dome-glass">
+          <div class="dome-highlight"></div>
+          <!-- 圆顶里的扭蛋们 -->
+          <div class="capsule capsule-dome c1"></div>
+          <div class="capsule capsule-dome c2"></div>
+          <div class="capsule capsule-dome c3"></div>
+          <div class="capsule capsule-dome c4"></div>
+          <div class="capsule capsule-dome c5"></div>
+          <div class="capsule capsule-dome c6"></div>
+          <div class="capsule capsule-dome c7"></div>
+        </div>
+      </div>
+      <!-- 机身 -->
+      <div class="machine-body">
+        <div class="body-front">
+          <div class="display-window">
+            <div class="window-label">扭蛋出口</div>
+            <div class="window-hole"></div>
+          </div>
+        </div>
+      </div>
+      <!-- 底座 -->
+      <div class="machine-base">
+        <div class="base-top"></div>
+        <div class="base-bottom"></div>
+      </div>
+      <!-- 把手 -->
+      <div class="crank" id="crankBtn">
+        <div class="crank-arm"></div>
+        <div class="crank-handle"></div>
+      </div>
+    </div>
+
+    <!-- 扭蛋按钮 -->
+    <button class="twist-btn" id="twistBtn">
+      <span class="btn-text">✨ 点击扭蛋 ✨</span>
+    </button>
+    <p class="twist-hint">把手也会跟着转哦 ~</p>
+
+    <!-- 扭蛋掉落区 -->
+    <div class="drop-zone" id="dropZone">
+      <div class="capsule-falling" id="capsuleFalling">
+        <div class="capsule-top"></div>
+        <div class="capsule-bottom"></div>
+      </div>
+    </div>
+
+    <!-- 卡片结果 -->
+    <div class="result-overlay" id="resultOverlay">
+      <div class="result-card" id="resultCard">
+        <div class="card-sparkle sparkle-tl">✨</div>
+        <div class="card-sparkle sparkle-tr">✨</div>
+        <div class="card-sparkle sparkle-bl">💗</div>
+        <div class="card-sparkle sparkle-br">💗</div>
+        <div class="card-inner">
+          <div class="card-photo-frame">
+            <img class="card-photo" id="cardPhoto" src="" alt="抽中的照片">
+          </div>
+          <div class="card-divider"></div>
+          <p class="card-text" id="cardText"></p>
+          <div class="rarity-stars" id="rarityStars"></div>
+        </div>
+        <button class="retry-btn" id="retryBtn">
+          <span>🔄 再扭一次</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 二维码分享弹窗 -->
+  <div class="qr-overlay" id="qrOverlay">
+    <div class="qr-modal">
+      <button class="qr-close" id="qrClose">✕</button>
+      <h2 class="qr-title">📱 分享给 Ta</h2>
+      <div class="qr-container" id="qrCode"></div>
+      <p class="qr-hint">截图发送给 Ta 扫码</p>
+      <p class="qr-url" id="qrUrl"></p>
+      <button class="qr-copy-btn" id="qrCopyBtn">📋 复制链接</button>
+    </div>
+  </div>
+
+  <!-- 粒子 Canvas -->
+  <canvas id="particleCanvas"></canvas>
+
+  <script src="config.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
