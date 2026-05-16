@@ -3,229 +3,139 @@
    ============================================ */
 
 // --- DOM 元素 ---
-const twistBtn     = document.getElementById('twistBtn');
-const retryBtn     = document.getElementById('retryBtn');
-const gachaMachine = document.getElementById('gachaMachine');
-const crankBtn     = document.getElementById('crankBtn');
-const capsuleEl    = document.getElementById('capsuleFalling');
-const resultOverlay = document.getElementById('resultOverlay');
-const resultCard   = document.getElementById('resultCard');
-const cardPhoto    = document.getElementById('cardPhoto');
-const cardText     = document.getElementById('cardText');
-const rarityStars  = document.getElementById('rarityStars');
-const shareBtn     = document.getElementById('shareBtn');
-const qrOverlay    = document.getElementById('qrOverlay');
-const qrClose      = document.getElementById('qrClose');
-const qrCode       = document.getElementById('qrCode');
-const qrUrl        = document.getElementById('qrUrl');
-const qrCopyBtn    = document.getElementById('qrCopyBtn');
+var twistBtn     = document.getElementById('twistBtn');
+var retryBtn     = document.getElementById('retryBtn');
+var gachaMachine = document.getElementById('gachaMachine');
+var crankBtn     = document.getElementById('crankBtn');
+var capsuleEl    = document.getElementById('capsuleFalling');
+var resultOverlay = document.getElementById('resultOverlay');
+var resultCard   = document.getElementById('resultCard');
+var cardPhoto    = document.getElementById('cardPhoto');
+var cardText     = document.getElementById('cardText');
+var rarityStars  = document.getElementById('rarityStars');
+var shareBtn     = document.getElementById('shareBtn');
+var qrOverlay    = document.getElementById('qrOverlay');
+var qrClose      = document.getElementById('qrClose');
+var qrCode       = document.getElementById('qrCode');
+var qrUrl        = document.getElementById('qrUrl');
+var qrCopyBtn    = document.getElementById('qrCopyBtn');
+var musicBtn     = document.getElementById('musicBtn');
+var musicIcon    = document.getElementById('musicIcon');
+var canvas       = document.getElementById('particleCanvas');
+var ctx2d        = canvas.getContext('2d');
 
-// --- Web Audio 音效引擎 ---
-const musicBtn   = document.getElementById('musicBtn');
-const musicIcon  = document.getElementById('musicIcon');
+// --- 状态 ---
+var isSpinning = false;
+var currentPrize = null;
+var audioCtx = null;
+var musicPlaying = false;
+var musicStarted = false;
+var bgmInterval = null;
+var bgmGainNode = null;
+var bgmIdx = 0;
+var bgmNotes = [523, 659, 784, 523, 880, 784, 659, 784, 1047, 784, 659, 523, 587, 659, 784, 523];
 
-let audioCtx = null;
-let audioUnlocked = false;
-let musicPlaying = false;
-let musicStarted = false;
-let bgmNodes = null;
-
-// 移动端音频解锁：必须在用户手势同步执行中创建 AudioContext
-// iOS Safari 在点击事件同步阶段创建 → 自动进入 running 状态
-// 如果 async/await 让出执行权 → 手势过期 → iOS 永久静音
-function unlockAudio() {
-  if (audioUnlocked) return;
-  try {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-    // iOS 无声缓冲技巧：播放一个零长度缓冲，强制激活音频硬件
-    var buf = audioCtx.createBuffer(1, 1, 22050);
-    var src = audioCtx.createBufferSource();
-    src.buffer = buf;
-    src.connect(audioCtx.destination);
-    src.start(0);
-    audioUnlocked = true;
-  } catch (e) {
-    // 移动端音频不可用，静默降级，不阻塞页面交互
-  }
-}
-
-// 确保 audioCtx 处于可用状态（在 setTimeout 回调里使用）
-function ctxOk() {
+// --- 音频引擎 ---
+function hasAudio() {
   return audioCtx && audioCtx.state === 'running';
 }
 
-// --- 摇晃音效：短促机械咔嗒声 ---
+function initAudio() {
+  if (audioCtx) return;
+  try {
+    var Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return;
+    audioCtx = new Ctor();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) {}
+}
+
+function playTone(freq, startTime, dur, type, vol) {
+  if (!hasAudio()) return;
+  try {
+    var o = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, startTime);
+    g.gain.setValueAtTime(0, startTime);
+    g.gain.linearRampToValueAtTime(vol || 0.08, startTime + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, startTime + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(startTime); o.stop(startTime + dur + 0.01);
+  } catch (e) {}
+}
+
 function playShakeSfx() {
-  if (!ctxOk()) return;
-  var ctx = audioCtx;
-  var now = ctx.currentTime;
-  for (let i = 0; i < 8; i++) {
-    const t = now + i * 0.06;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(200 + Math.random() * 400, t);
-    osc.frequency.exponentialRampToValueAtTime(80, t + 0.04);
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.08, t + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 0.05);
+  if (!hasAudio()) return;
+  var t = audioCtx.currentTime;
+  for (var i = 0; i < 6; i++) {
+    playTone(150 + Math.random() * 300, t + i * 0.07, 0.04, 'triangle', 0.06);
   }
 }
 
-// --- 掉落音效：下滑音 ---
 function playDropSfx() {
-  if (!ctxOk()) return;
-  var ctx = audioCtx;
-  var now = ctx.currentTime;
-  var osc = ctx.createOscillator();
-  var gain = ctx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(600, now);
-  osc.frequency.exponentialRampToValueAtTime(150, now + 0.5);
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.1, now + 0.02);
-  gain.gain.setValueAtTime(0.1, now + 0.35);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(now);
-  osc.stop(now + 0.6);
+  if (!hasAudio()) return;
+  var t = audioCtx.currentTime;
+  playTone(500, t, 0.55, 'sine', 0.08);
+  try {
+    var o = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(500, t);
+    o.frequency.exponentialRampToValueAtTime(120, t + 0.55);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.07, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t); o.stop(t + 0.6);
+  } catch (e) {}
 }
 
-// --- 爆开/揭示音效：魔法上行琶音 ---
 function playRevealSfx() {
-  if (!ctxOk()) return;
-  var ctx = audioCtx;
-  var now = ctx.currentTime;
-  // 欢快的上行和弦：C5 E5 G5 C6
-  const notes = [523, 659, 784, 1047];
-  notes.forEach((freq, i) => {
-    const t = now + i * 0.12;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, t);
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.09, t + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 0.45);
+  if (!hasAudio()) return;
+  var t = audioCtx.currentTime;
+  [523, 659, 784, 1047].forEach(function(f, i) {
+    playTone(f, t + i * 0.12, 0.35, 'sine', 0.07);
   });
-  // 加点闪烁感：高频泛音
-  const chime = ctx.createOscillator();
-  const chimeGain = ctx.createGain();
-  chime.type = 'triangle';
-  chime.frequency.setValueAtTime(1318, now);
-  chimeGain.gain.setValueAtTime(0, now);
-  chimeGain.gain.linearRampToValueAtTime(0.04, now + 0.05);
-  chimeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
-  chime.connect(chimeGain);
-  chimeGain.connect(ctx.destination);
-  chime.start(now);
-  chime.stop(now + 0.85);
 }
-
-// --- 背景音乐：八音盒风格循环 ---
-const melody = [
-  // note, startBeat, durationBeats
-  [523, 0, 0.5], [659, 0.5, 0.5], [784, 1, 0.5], [1047, 1.5, 0.5],
-  [880, 2, 0.5], [784, 2.5, 0.5], [659, 3, 0.5], [523, 3.5, 0.5],
-  [587, 4, 0.5], [784, 4.5, 0.5], [1047, 5, 0.5], [1318, 5.5, 0.5],
-  [1175, 6, 0.5], [1047, 6.5, 0.5], [784, 7, 0.5], [659, 7.5, 0.5],
-  [698, 8, 0.5], [784, 8.5, 0.5], [880, 9, 1], [1047, 10, 0.5], [880, 10.5, 0.5],
-  [784, 11, 0.5], [659, 11.5, 0.5], [587, 12, 0.5], [523, 12.5, 0.5],
-  [587, 13, 0.5], [659, 13.5, 0.5], [784, 14, 1], [523, 15, 0.5], [659, 15.5, 0.5],
-];
 
 function startBgm() {
-  if (!ctxOk()) return;
-  var ctx = audioCtx;
-  var now = ctx.currentTime;
-  const bps = 0.45;
-  const loopDuration = 16 * bps;
-
-  const masterGain = ctx.createGain();
-  masterGain.gain.setValueAtTime(0.025, now);
-  masterGain.connect(ctx.destination);
-
-  function playLoop(offset) {
-    melody.forEach(([freq, beat, dur]) => {
-      const t = offset + beat * bps;
-      const d = dur * bps * 0.9;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, t);
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(freq * 2, t);
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(0.1, t + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + d);
-      gain2.gain.setValueAtTime(0, t);
-      gain2.gain.linearRampToValueAtTime(0.03, t + 0.02);
-      gain2.gain.exponentialRampToValueAtTime(0.001, t + d * 0.7);
-      osc.connect(gain);
-      osc2.connect(gain2);
-      gain.connect(masterGain);
-      gain2.connect(masterGain);
-      osc.start(t);
-      osc.stop(t + d);
-      osc2.start(t);
-      osc2.stop(t + d * 0.7);
-    });
-  }
-
-  let stopped = false;
-  function scheduleLoop() {
-    if (stopped || !ctxOk()) return;
-    try { playLoop(audioCtx.currentTime); } catch (e) {}
-    var next = loopDuration * 1000 * 0.95;
-    bgmNodes.timeoutId = setTimeout(scheduleLoop, next);
-  }
-
-  playLoop(now);
-  scheduleLoop();
-
-  bgmNodes = { masterGain, stopped: () => { stopped = true; } };
+  if (!hasAudio() || bgmInterval) return;
+  try {
+    bgmGainNode = audioCtx.createGain();
+    bgmGainNode.gain.value = 0.02;
+    bgmGainNode.connect(audioCtx.destination);
+  } catch (e) { return; }
+  bgmInterval = setInterval(function() {
+    if (!hasAudio()) return;
+    try {
+      playTone(bgmNotes[bgmIdx % bgmNotes.length], audioCtx.currentTime, 0.38, 'sine', 0.05);
+      bgmIdx++;
+    } catch (e) {}
+  }, 480);
 }
 
 function stopBgm() {
-  if (bgmNodes) {
-    bgmNodes.stopped();
-    clearTimeout(bgmNodes.timeoutId);
-    bgmNodes.masterGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-    bgmNodes = null;
+  if (bgmInterval) { clearInterval(bgmInterval); bgmInterval = null; }
+  if (bgmGainNode) {
+    try { bgmGainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3); } catch (e) {}
+    bgmGainNode = null;
   }
 }
 
-// --- 音乐控制 ---
 function tryStartMusic() {
   if (musicStarted) return;
-  unlockAudio();
-  startBgm();
-  musicPlaying = true;
   musicStarted = true;
+  musicPlaying = true;
   musicBtn.classList.add('playing');
   musicBtn.classList.remove('muted');
   musicIcon.textContent = '🎵';
+  initAudio();
+  startBgm();
 }
 
 function toggleMusic() {
-  if (!musicStarted) {
-    tryStartMusic();
-    return;
-  }
+  if (!musicStarted) { tryStartMusic(); return; }
   if (musicPlaying) {
     stopBgm();
     musicPlaying = false;
@@ -233,7 +143,7 @@ function toggleMusic() {
     musicBtn.classList.add('muted');
     musicIcon.textContent = '🔇';
   } else {
-    unlockAudio();
+    initAudio();
     startBgm();
     musicPlaying = true;
     musicBtn.classList.add('playing');
@@ -242,61 +152,47 @@ function toggleMusic() {
   }
 }
 
-musicBtn.addEventListener('click', toggleMusic);
+musicBtn.addEventListener('click', function(e) {
+  e.stopPropagation();
+  toggleMusic();
+});
 
-const canvas       = document.getElementById('particleCanvas');
-const ctx          = canvas.getContext('2d');
-
-// --- 状态 ---
-let isSpinning = false;
-let currentPrize = null;
-
-// --- 工具函数：加权随机 ---
+// --- 加权随机 ---
 function weightedRandom(items) {
-  const weights = items.map(item => {
-    // rarity 1 (稀有) = 权重低, rarity 3 (常见) = 权重高
-    switch (item.rarity) {
-      case 1: return 2;   // 稀有
-      case 2: return 5;   // 不常见
-      case 3: return 10;  // 常见
-      default: return 5;
-    }
-  });
-
-  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-  let random = Math.random() * totalWeight;
-
-  for (let i = 0; i < items.length; i++) {
-    random -= weights[i];
-    if (random <= 0) return items[i];
+  var weights = [];
+  for (var i = 0; i < items.length; i++) {
+    var r = items[i].rarity;
+    weights.push(r === 1 ? 2 : r === 2 ? 5 : 10);
   }
-
+  var total = 0;
+  for (var j = 0; j < weights.length; j++) total += weights[j];
+  var rand = Math.random() * total;
+  for (var k = 0; k < items.length; k++) {
+    rand -= weights[k];
+    if (rand <= 0) return items[k];
+  }
   return items[items.length - 1];
 }
 
-// --- 检查图片是否存在（失败时回退到占位图） ---
-function setPhotoWithFallback(imgEl, src) {
-  imgEl.onerror = function () {
-    imgEl.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23FFE4EC' width='200' height='200' rx='20'/%3E%3Ctext x='100' y='90' text-anchor='middle' fill='%23E8678A' font-size='48'%3E💗%3C/text%3E%3Ctext x='100' y='135' text-anchor='middle' fill='%23E8678A' font-size='13' font-family='sans-serif'%3E照片放这里%3C/text%3E%3C/svg%3E`;
-    imgEl.onerror = null;
+function setPhotoWithFallback(img, src) {
+  img.onerror = function() {
+    img.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23FFE4EC' width='200' height='200' rx='20'/%3E%3Ctext x='100' y='90' text-anchor='middle' fill='%23E8678A' font-size='48'%3E💗%3C/text%3E%3Ctext x='100' y='135' text-anchor='middle' fill='%23E8678A' font-size='13' font-family='sans-serif'%3E照片放这里%3C/text%3E%3C/svg%3E";
+    img.onerror = null;
   };
-  imgEl.src = src;
+  img.src = src;
 }
 
 // --- 粒子特效 ---
-let particles = [];
-let animFrameId = null;
-
-const particleColors = ['#FF85A2', '#FFB3C6', '#FFD700', '#FFE0A0', '#FF5C8A',
-                        '#E8D0FF', '#C8E0FF', '#B8F0D0', '#FFFFFF'];
+var particles = [];
+var animFrameId = null;
+var particleColors = ['#FF85A2','#FFB3C6','#FFD700','#FFE0A0','#FF5C8A','#E8D0FF','#C8E0FF','#B8F0D0','#FFFFFF'];
 
 function spawnParticles(x, y, count) {
-  for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = Math.random() * 6 + 2;
+  for (var i = 0; i < count; i++) {
+    var angle = Math.random() * Math.PI * 2;
+    var speed = Math.random() * 6 + 2;
     particles.push({
-      x: x,
-      y: y,
+      x: x, y: y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed - 3,
       size: Math.random() * 4 + 2,
@@ -309,55 +205,35 @@ function spawnParticles(x, y, count) {
 }
 
 function animateParticles() {
-  if (particles.length === 0) {
-    animFrameId = null;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    return;
-  }
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  particles = particles.filter(p => p.life > 0);
-
-  for (const p of particles) {
-    p.x += p.vx;
-    p.vy += 0.12;
-    p.y += p.vy;
-    p.life -= p.decay;
-
-    ctx.save();
-    ctx.globalAlpha = p.life;
-    ctx.fillStyle = p.color;
-
+  if (particles.length === 0) { animFrameId = null; ctx2d.clearRect(0, 0, canvas.width, canvas.height); return; }
+  ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+  particles = particles.filter(function(p) { return p.life > 0; });
+  for (var i = 0; i < particles.length; i++) {
+    var p = particles[i];
+    p.x += p.vx; p.vy += 0.12; p.y += p.vy; p.life -= p.decay;
+    ctx2d.save();
+    ctx2d.globalAlpha = p.life;
+    ctx2d.fillStyle = p.color;
     if (p.shape === 'circle') {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      ctx.fill();
+      ctx2d.beginPath();
+      ctx2d.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx2d.fill();
     } else {
-      // 画小心形
-      const s = p.size;
-      ctx.beginPath();
-      const tx = p.x;
-      const ty = p.y;
-      ctx.moveTo(tx, ty + s * 0.3);
-      ctx.bezierCurveTo(tx, ty - s * 0.3, tx - s, ty - s * 0.3, tx - s, ty + s * 0.3);
-      ctx.bezierCurveTo(tx - s, ty + s * 0.8, tx, ty + s * 0.7, tx, ty + s);
-      ctx.bezierCurveTo(tx, ty + s * 0.7, tx + s, ty + s * 0.8, tx + s, ty + s * 0.3);
-      ctx.bezierCurveTo(tx + s, ty - s * 0.3, tx, ty - s * 0.3, tx, ty + s * 0.3);
-      ctx.fill();
+      var s = p.size, tx = p.x, ty = p.y;
+      ctx2d.beginPath();
+      ctx2d.moveTo(tx, ty + s * 0.3);
+      ctx2d.bezierCurveTo(tx, ty - s * 0.3, tx - s, ty - s * 0.3, tx - s, ty + s * 0.3);
+      ctx2d.bezierCurveTo(tx - s, ty + s * 0.8, tx, ty + s * 0.7, tx, ty + s);
+      ctx2d.bezierCurveTo(tx, ty + s * 0.7, tx + s, ty + s * 0.8, tx + s, ty + s * 0.3);
+      ctx2d.bezierCurveTo(tx + s, ty - s * 0.3, tx, ty - s * 0.3, tx, ty + s * 0.3);
+      ctx2d.fill();
     }
-
-    ctx.restore();
+    ctx2d.restore();
   }
-
   animFrameId = requestAnimationFrame(animateParticles);
 }
 
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-
+function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
@@ -366,37 +242,28 @@ function startGacha() {
   if (isSpinning) return;
   isSpinning = true;
 
-  // 移动端音频解锁：必须在用户手势同步阶段完成
-  unlockAudio();
-
-  // 首次交互时启动背景音乐
-  tryStartMusic();
-
-  // 禁用按钮
   twistBtn.disabled = true;
   twistBtn.querySelector('.btn-text').textContent = '🎰 扭蛋中...';
 
-  // 重置状态
+  // 初始化音频（不影响交互）
+  try { initAudio(); if (!musicStarted) tryStartMusic(); } catch (e) {}
+
   capsuleEl.classList.remove('dropping', 'popping');
   capsuleEl.style.opacity = '0';
   capsuleEl.style.transform = 'scale(0.3)';
 
-  // 1. 机器摇晃
   gachaMachine.classList.add('shaking');
   crankBtn.classList.add('spinning');
   playShakeSfx();
 
-  // 2. 摇晃结束 → 扭蛋掉落
-  setTimeout(() => {
+  setTimeout(function() {
     gachaMachine.classList.remove('shaking');
     crankBtn.classList.remove('spinning');
 
-    // 抽奖
     currentPrize = weightedRandom(gachaData);
 
-    // 设置扭蛋颜色（根据稀有度）
-    const topHalf = capsuleEl.querySelector('.capsule-top');
-    const botHalf = capsuleEl.querySelector('.capsule-bottom');
+    var topHalf = capsuleEl.querySelector('.capsule-top');
+    var botHalf = capsuleEl.querySelector('.capsule-bottom');
     if (currentPrize.rarity === 1) {
       topHalf.style.background = 'linear-gradient(180deg, #FFD700, #FFF0A0)';
       botHalf.style.background = 'linear-gradient(180deg, #FFF0A0, #FFD700)';
@@ -405,43 +272,32 @@ function startGacha() {
       botHalf.style.background = 'linear-gradient(180deg, #FFD4E0, #FFB3C6)';
     }
 
-    // 掉落动画
     capsuleEl.classList.add('dropping');
     playDropSfx();
 
-    // 3. 扭蛋到达底部 → 爆开
-    setTimeout(() => {
+    setTimeout(function() {
       capsuleEl.classList.add('popping');
 
-      // 粒子爆炸（从屏幕中央偏下）
-      const cx = window.innerWidth / 2;
-      const cy = window.innerHeight * 0.65;
+      var cx = window.innerWidth / 2;
+      var cy = window.innerHeight * 0.65;
       spawnParticles(cx, cy, 50);
       if (!animFrameId) animateParticles();
       playRevealSfx();
 
-      // 4. 显示结果卡片
-      setTimeout(() => {
-        // 加载照片
+      setTimeout(function() {
         setPhotoWithFallback(cardPhoto, currentPrize.image);
         cardText.textContent = currentPrize.text;
 
-        // 稀有度星星
-        const stars = ['⭐', '🌟', '💎'];
-        const starCount = currentPrize.rarity;
-        let starStr = '';
-        for (let i = 0; i < starCount; i++) {
-          starStr += stars[starCount - 1] || '⭐';
-        }
+        var starCount = currentPrize.rarity;
+        var starStr = '';
+        for (var s = 0; s < starCount; s++) starStr += starCount === 1 ? '💎' : starCount === 2 ? '🌟' : '⭐';
         rarityStars.textContent = starStr;
 
-        // 显示卡片
         resultOverlay.classList.add('show');
         capsuleEl.classList.remove('dropping', 'popping');
         capsuleEl.style.opacity = '0';
         capsuleEl.style.transform = 'scale(0.3)';
 
-        // 卡片出现时再爆一轮粒子
         spawnParticles(cx, cy, 30);
         if (!animFrameId) animateParticles();
 
@@ -449,19 +305,15 @@ function startGacha() {
         twistBtn.disabled = false;
         twistBtn.querySelector('.btn-text').textContent = '✨ 点击扭蛋 ✨';
       }, 400);
-
     }, 900);
-
   }, 1500);
 }
 
 function resetGacha() {
   resultOverlay.classList.remove('show');
   currentPrize = null;
-
-  // 再次粒子
-  const cx = window.innerWidth / 2;
-  const cy = window.innerHeight * 0.5;
+  var cx = window.innerWidth / 2;
+  var cy = window.innerHeight * 0.5;
   spawnParticles(cx, cy, 25);
   if (!animFrameId) animateParticles();
 }
@@ -473,75 +325,53 @@ retryBtn.addEventListener('click', resetGacha);
 
 // --- QR 码分享 ---
 function openQRModal() {
-  // 清空旧二维码
   qrCode.innerHTML = '';
-
-  const url = window.location.href;
-
+  var url = window.location.href;
   try {
     new QRCode(qrCode, {
-      text: url,
-      width: 200,
-      height: 200,
-      colorDark: '#E8678A',
-      colorLight: '#FFF5F7',
+      text: url, width: 200, height: 200,
+      colorDark: '#E8678A', colorLight: '#FFF5F7',
       correctLevel: QRCode.CorrectLevel.M
     });
   } catch (e) {
     qrCode.innerHTML = '<p style="color:#E8678A;">二维码生成失败，请直接分享链接 💗</p>';
   }
-
   qrUrl.textContent = url;
   qrOverlay.classList.add('show');
 }
 
-function closeQRModal() {
-  qrOverlay.classList.remove('show');
-}
+function closeQRModal() { qrOverlay.classList.remove('show'); }
 
 shareBtn.addEventListener('click', openQRModal);
 qrClose.addEventListener('click', closeQRModal);
-
-qrOverlay.addEventListener('click', function (e) {
+qrOverlay.addEventListener('click', function(e) {
   if (e.target === qrOverlay) closeQRModal();
 });
 
-// 复制链接
-qrCopyBtn.addEventListener('click', function () {
-  const url = window.location.href;
-  navigator.clipboard.writeText(url).then(() => {
+qrCopyBtn.addEventListener('click', function() {
+  var url = window.location.href;
+  navigator.clipboard.writeText(url).then(function() {
     qrCopyBtn.textContent = '✅ 已复制！';
     qrCopyBtn.classList.add('copied');
-    setTimeout(() => {
-      qrCopyBtn.textContent = '📋 复制链接';
-      qrCopyBtn.classList.remove('copied');
-    }, 2000);
-  }).catch(() => {
+    setTimeout(function() { qrCopyBtn.textContent = '📋 复制链接'; qrCopyBtn.classList.remove('copied'); }, 2000);
+  }).catch(function() {
     qrCopyBtn.textContent = '❌ 复制失败';
-    setTimeout(() => {
-      qrCopyBtn.textContent = '📋 复制链接';
-    }, 2000);
+    setTimeout(function() { qrCopyBtn.textContent = '📋 复制链接'; }, 2000);
   });
 });
 
-// 键盘关闭弹窗
-document.addEventListener('keydown', function (e) {
+document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     if (qrOverlay.classList.contains('show')) closeQRModal();
     if (resultOverlay.classList.contains('show')) resetGacha();
   }
 });
 
-// --- 卡片照片加载后触发微动画 ---
-cardPhoto.addEventListener('load', function () {
+cardPhoto.addEventListener('load', function() {
   if (resultOverlay.classList.contains('show')) {
-    const cx = window.innerWidth / 2;
-    const cy = window.innerHeight * 0.5;
+    var cx = window.innerWidth / 2;
+    var cy = window.innerHeight * 0.5;
     spawnParticles(cx, cy, 15);
     if (!animFrameId) animateParticles();
   }
 });
-
-console.log('💗 扭蛋惊喜机已就绪！');
-console.log('📸 请将照片放入 images/ 文件夹，并在 config.js 中配置路径');
-console.log('🔗 当前页面地址：' + window.location.href);
