@@ -29,15 +29,21 @@ let musicPlaying = false;
 let musicStarted = false;
 let bgmNodes = null;
 
-function ensureAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+// 移动端必须等 resume() 完成才能出声
+async function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+  }
   return audioCtx;
 }
 
 // --- 摇晃音效：短促机械咔嗒声 ---
 function playShakeSfx() {
-  const ctx = ensureAudio();
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  const ctx = audioCtx;
   const now = ctx.currentTime;
   for (let i = 0; i < 8; i++) {
     const t = now + i * 0.06;
@@ -58,7 +64,8 @@ function playShakeSfx() {
 
 // --- 掉落音效：下滑音 ---
 function playDropSfx() {
-  const ctx = ensureAudio();
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  const ctx = audioCtx;
   const now = ctx.currentTime;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -77,7 +84,8 @@ function playDropSfx() {
 
 // --- 爆开/揭示音效：魔法上行琶音 ---
 function playRevealSfx() {
-  const ctx = ensureAudio();
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  const ctx = audioCtx;
   const now = ctx.currentTime;
   // 欢快的上行和弦：C5 E5 G5 C6
   const notes = [523, 659, 784, 1047];
@@ -122,13 +130,13 @@ const melody = [
 ];
 
 function startBgm() {
-  const ctx = ensureAudio();
+  const ctx = audioCtx;
   const now = ctx.currentTime;
-  const bps = 0.45; // seconds per beat
+  const bps = 0.45;
   const loopDuration = 16 * bps;
 
   const masterGain = ctx.createGain();
-  masterGain.gain.setValueAtTime(0.02, now);
+  masterGain.gain.setValueAtTime(0.025, now);
   masterGain.connect(ctx.destination);
 
   function playLoop(offset) {
@@ -139,7 +147,6 @@ function startBgm() {
       const gain = ctx.createGain();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, t);
-      // 加一点温暖泛音
       const osc2 = ctx.createOscillator();
       const gain2 = ctx.createGain();
       osc2.type = 'sine';
@@ -161,24 +168,33 @@ function startBgm() {
     });
   }
 
-  playLoop(now);
-  const intervalId = setInterval(() => playLoop(audioCtx.currentTime), loopDuration * 1000);
+  let stopped = false;
+  function scheduleLoop() {
+    if (stopped) return;
+    playLoop(audioCtx.currentTime);
+    const next = loopDuration * 1000 * 0.95; // 稍微提前调度，避免间隙
+    bgmNodes.timeoutId = setTimeout(scheduleLoop, next);
+  }
 
-  bgmNodes = { masterGain, intervalId };
+  playLoop(now);
+  scheduleLoop();
+
+  bgmNodes = { masterGain, stopped: () => { stopped = true; } };
 }
 
 function stopBgm() {
   if (bgmNodes) {
-    clearInterval(bgmNodes.intervalId);
+    bgmNodes.stopped();
+    clearTimeout(bgmNodes.timeoutId);
     bgmNodes.masterGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
     bgmNodes = null;
   }
 }
 
 // --- 音乐控制 ---
-function tryStartMusic() {
+async function tryStartMusic() {
   if (musicStarted) return;
-  ensureAudio();
+  await ensureAudio();
   startBgm();
   musicPlaying = true;
   musicStarted = true;
@@ -187,9 +203,9 @@ function tryStartMusic() {
   musicIcon.textContent = '🎵';
 }
 
-function toggleMusic() {
+async function toggleMusic() {
   if (!musicStarted) {
-    tryStartMusic();
+    await tryStartMusic();
     return;
   }
   if (musicPlaying) {
@@ -199,7 +215,7 @@ function toggleMusic() {
     musicBtn.classList.add('muted');
     musicIcon.textContent = '🔇';
   } else {
-    ensureAudio();
+    await ensureAudio();
     startBgm();
     musicPlaying = true;
     musicBtn.classList.add('playing');
@@ -328,9 +344,12 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 // --- 扭蛋主流程 ---
-function startGacha() {
+async function startGacha() {
   if (isSpinning) return;
   isSpinning = true;
+
+  // 移动端必须在此处（点击事件内）唤醒 AudioContext
+  await ensureAudio();
 
   // 首次交互时启动背景音乐
   tryStartMusic();
