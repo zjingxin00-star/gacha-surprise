@@ -20,30 +20,171 @@ const qrCode       = document.getElementById('qrCode');
 const qrUrl        = document.getElementById('qrUrl');
 const qrCopyBtn    = document.getElementById('qrCopyBtn');
 
-// --- 音频元素 ---
-const bgMusic    = document.getElementById('bgMusic');
-const sfxShake   = document.getElementById('sfxShake');
-const sfxDrop    = document.getElementById('sfxDrop');
-const sfxReveal  = document.getElementById('sfxReveal');
+// --- Web Audio 音效引擎 ---
 const musicBtn   = document.getElementById('musicBtn');
 const musicIcon  = document.getElementById('musicIcon');
 
+let audioCtx = null;
 let musicPlaying = false;
 let musicStarted = false;
+let bgmNodes = null;
+
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// --- 摇晃音效：短促机械咔嗒声 ---
+function playShakeSfx() {
+  const ctx = ensureAudio();
+  const now = ctx.currentTime;
+  for (let i = 0; i < 8; i++) {
+    const t = now + i * 0.06;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(200 + Math.random() * 400, t);
+    osc.frequency.exponentialRampToValueAtTime(80, t + 0.04);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.08, t + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.05);
+  }
+}
+
+// --- 掉落音效：下滑音 ---
+function playDropSfx() {
+  const ctx = ensureAudio();
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(600, now);
+  osc.frequency.exponentialRampToValueAtTime(150, now + 0.5);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.1, now + 0.02);
+  gain.gain.setValueAtTime(0.1, now + 0.35);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.6);
+}
+
+// --- 爆开/揭示音效：魔法上行琶音 ---
+function playRevealSfx() {
+  const ctx = ensureAudio();
+  const now = ctx.currentTime;
+  // 欢快的上行和弦：C5 E5 G5 C6
+  const notes = [523, 659, 784, 1047];
+  notes.forEach((freq, i) => {
+    const t = now + i * 0.12;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.09, t + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.45);
+  });
+  // 加点闪烁感：高频泛音
+  const chime = ctx.createOscillator();
+  const chimeGain = ctx.createGain();
+  chime.type = 'triangle';
+  chime.frequency.setValueAtTime(1318, now);
+  chimeGain.gain.setValueAtTime(0, now);
+  chimeGain.gain.linearRampToValueAtTime(0.04, now + 0.05);
+  chimeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+  chime.connect(chimeGain);
+  chimeGain.connect(ctx.destination);
+  chime.start(now);
+  chime.stop(now + 0.85);
+}
+
+// --- 背景音乐：八音盒风格循环 ---
+const melody = [
+  // note, startBeat, durationBeats
+  [523, 0, 0.5], [659, 0.5, 0.5], [784, 1, 0.5], [1047, 1.5, 0.5],
+  [880, 2, 0.5], [784, 2.5, 0.5], [659, 3, 0.5], [523, 3.5, 0.5],
+  [587, 4, 0.5], [784, 4.5, 0.5], [1047, 5, 0.5], [1318, 5.5, 0.5],
+  [1175, 6, 0.5], [1047, 6.5, 0.5], [784, 7, 0.5], [659, 7.5, 0.5],
+  [698, 8, 0.5], [784, 8.5, 0.5], [880, 9, 1], [1047, 10, 0.5], [880, 10.5, 0.5],
+  [784, 11, 0.5], [659, 11.5, 0.5], [587, 12, 0.5], [523, 12.5, 0.5],
+  [587, 13, 0.5], [659, 13.5, 0.5], [784, 14, 1], [523, 15, 0.5], [659, 15.5, 0.5],
+];
+
+function startBgm() {
+  const ctx = ensureAudio();
+  const now = ctx.currentTime;
+  const bps = 0.45; // seconds per beat
+  const loopDuration = 16 * bps;
+
+  const masterGain = ctx.createGain();
+  masterGain.gain.setValueAtTime(0.02, now);
+  masterGain.connect(ctx.destination);
+
+  function playLoop(offset) {
+    melody.forEach(([freq, beat, dur]) => {
+      const t = offset + beat * bps;
+      const d = dur * bps * 0.9;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      // 加一点温暖泛音
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(freq * 2, t);
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.1, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + d);
+      gain2.gain.setValueAtTime(0, t);
+      gain2.gain.linearRampToValueAtTime(0.03, t + 0.02);
+      gain2.gain.exponentialRampToValueAtTime(0.001, t + d * 0.7);
+      osc.connect(gain);
+      osc2.connect(gain2);
+      gain.connect(masterGain);
+      gain2.connect(masterGain);
+      osc.start(t);
+      osc.stop(t + d);
+      osc2.start(t);
+      osc2.stop(t + d * 0.7);
+    });
+  }
+
+  playLoop(now);
+  const intervalId = setInterval(() => playLoop(audioCtx.currentTime), loopDuration * 1000);
+
+  bgmNodes = { masterGain, intervalId };
+}
+
+function stopBgm() {
+  if (bgmNodes) {
+    clearInterval(bgmNodes.intervalId);
+    bgmNodes.masterGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+    bgmNodes = null;
+  }
+}
 
 // --- 音乐控制 ---
 function tryStartMusic() {
   if (musicStarted) return;
-  bgMusic.volume = 0.35;
-  bgMusic.play().then(() => {
-    musicPlaying = true;
-    musicStarted = true;
-    musicBtn.classList.add('playing');
-    musicBtn.classList.remove('muted');
-    musicIcon.textContent = '🎵';
-  }).catch(() => {
-    // 浏览器限制或其他错误，静默处理
-  });
+  ensureAudio();
+  startBgm();
+  musicPlaying = true;
+  musicStarted = true;
+  musicBtn.classList.add('playing');
+  musicBtn.classList.remove('muted');
+  musicIcon.textContent = '🎵';
 }
 
 function toggleMusic() {
@@ -52,32 +193,22 @@ function toggleMusic() {
     return;
   }
   if (musicPlaying) {
-    bgMusic.pause();
+    stopBgm();
     musicPlaying = false;
     musicBtn.classList.remove('playing');
     musicBtn.classList.add('muted');
     musicIcon.textContent = '🔇';
   } else {
-    bgMusic.play().then(() => {
-      musicPlaying = true;
-      musicBtn.classList.add('playing');
-      musicBtn.classList.remove('muted');
-      musicIcon.textContent = '🎵';
-    }).catch(() => {});
+    ensureAudio();
+    startBgm();
+    musicPlaying = true;
+    musicBtn.classList.add('playing');
+    musicBtn.classList.remove('muted');
+    musicIcon.textContent = '🎵';
   }
 }
 
-// 点击音乐按钮切换
 musicBtn.addEventListener('click', toggleMusic);
-
-// --- 音效播放 ---
-function playSfx(audioEl) {
-  if (audioEl && audioEl.src && audioEl.src !== window.location.href) {
-    audioEl.volume = 0.5;
-    audioEl.currentTime = 0;
-    audioEl.play().catch(() => {});
-  }
-}
 
 const canvas       = document.getElementById('particleCanvas');
 const ctx          = canvas.getContext('2d');
@@ -216,7 +347,7 @@ function startGacha() {
   // 1. 机器摇晃
   gachaMachine.classList.add('shaking');
   crankBtn.classList.add('spinning');
-  playSfx(sfxShake);
+  playShakeSfx();
 
   // 2. 摇晃结束 → 扭蛋掉落
   setTimeout(() => {
@@ -239,7 +370,7 @@ function startGacha() {
 
     // 掉落动画
     capsuleEl.classList.add('dropping');
-    playSfx(sfxDrop);
+    playDropSfx();
 
     // 3. 扭蛋到达底部 → 爆开
     setTimeout(() => {
@@ -250,7 +381,7 @@ function startGacha() {
       const cy = window.innerHeight * 0.65;
       spawnParticles(cx, cy, 50);
       if (!animFrameId) animateParticles();
-      playSfx(sfxReveal);
+      playRevealSfx();
 
       // 4. 显示结果卡片
       setTimeout(() => {
