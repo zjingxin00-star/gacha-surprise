@@ -37,21 +37,19 @@ function unlockAudio() {
   if (audioUnlocked) return;
   try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    // iOS 无声缓冲技巧：播放一个零长度缓冲，强制激活音频硬件
+    var buf = audioCtx.createBuffer(1, 1, 22050);
+    var src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+    src.start(0);
+    audioUnlocked = true;
   } catch (e) {
-    return;
+    // 移动端音频不可用，静默降级，不阻塞页面交互
   }
-  // 如果旧 context 还在 suspended，强制 resume（fire and forget）
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
-  // iOS 无声缓冲技巧：播放一个零长度缓冲，强制激活音频硬件
-  var buf = audioCtx.createBuffer(1, 1, 22050);
-  var src = audioCtx.createBufferSource();
-  src.buffer = buf;
-  src.connect(audioCtx.destination);
-  src.start(0);
-  src.onended = function () { src.disconnect(); };
-  audioUnlocked = true;
 }
 
 // 确保 audioCtx 处于可用状态（在 setTimeout 回调里使用）
@@ -149,8 +147,9 @@ const melody = [
 ];
 
 function startBgm() {
-  const ctx = audioCtx;
-  const now = ctx.currentTime;
+  if (!ctxOk()) return;
+  var ctx = audioCtx;
+  var now = ctx.currentTime;
   const bps = 0.45;
   const loopDuration = 16 * bps;
 
@@ -189,9 +188,9 @@ function startBgm() {
 
   let stopped = false;
   function scheduleLoop() {
-    if (stopped) return;
-    playLoop(audioCtx.currentTime);
-    const next = loopDuration * 1000 * 0.95; // 稍微提前调度，避免间隙
+    if (stopped || !ctxOk()) return;
+    try { playLoop(audioCtx.currentTime); } catch (e) {}
+    var next = loopDuration * 1000 * 0.95;
     bgmNodes.timeoutId = setTimeout(scheduleLoop, next);
   }
 
