@@ -19,6 +19,66 @@ const qrClose      = document.getElementById('qrClose');
 const qrCode       = document.getElementById('qrCode');
 const qrUrl        = document.getElementById('qrUrl');
 const qrCopyBtn    = document.getElementById('qrCopyBtn');
+
+// --- 音频元素 ---
+const bgMusic    = document.getElementById('bgMusic');
+const sfxShake   = document.getElementById('sfxShake');
+const sfxDrop    = document.getElementById('sfxDrop');
+const sfxReveal  = document.getElementById('sfxReveal');
+const musicBtn   = document.getElementById('musicBtn');
+const musicIcon  = document.getElementById('musicIcon');
+
+let musicPlaying = false;
+let musicStarted = false;
+
+// --- 音乐控制 ---
+function tryStartMusic() {
+  if (musicStarted) return;
+  bgMusic.volume = 0.35;
+  bgMusic.play().then(() => {
+    musicPlaying = true;
+    musicStarted = true;
+    musicBtn.classList.add('playing');
+    musicBtn.classList.remove('muted');
+    musicIcon.textContent = '🎵';
+  }).catch(() => {
+    // 浏览器限制或其他错误，静默处理
+  });
+}
+
+function toggleMusic() {
+  if (!musicStarted) {
+    tryStartMusic();
+    return;
+  }
+  if (musicPlaying) {
+    bgMusic.pause();
+    musicPlaying = false;
+    musicBtn.classList.remove('playing');
+    musicBtn.classList.add('muted');
+    musicIcon.textContent = '🔇';
+  } else {
+    bgMusic.play().then(() => {
+      musicPlaying = true;
+      musicBtn.classList.add('playing');
+      musicBtn.classList.remove('muted');
+      musicIcon.textContent = '🎵';
+    }).catch(() => {});
+  }
+}
+
+// 点击音乐按钮切换
+musicBtn.addEventListener('click', toggleMusic);
+
+// --- 音效播放 ---
+function playSfx(audioEl) {
+  if (audioEl && audioEl.src && audioEl.src !== window.location.href) {
+    audioEl.volume = 0.5;
+    audioEl.currentTime = 0;
+    audioEl.play().catch(() => {});
+  }
+}
+
 const canvas       = document.getElementById('particleCanvas');
 const ctx          = canvas.getContext('2d');
 
@@ -141,6 +201,9 @@ function startGacha() {
   if (isSpinning) return;
   isSpinning = true;
 
+  // 首次交互时启动背景音乐
+  tryStartMusic();
+
   // 禁用按钮
   twistBtn.disabled = true;
   twistBtn.querySelector('.btn-text').textContent = '🎰 扭蛋中...';
@@ -153,6 +216,7 @@ function startGacha() {
   // 1. 机器摇晃
   gachaMachine.classList.add('shaking');
   crankBtn.classList.add('spinning');
+  playSfx(sfxShake);
 
   // 2. 摇晃结束 → 扭蛋掉落
   setTimeout(() => {
@@ -175,6 +239,7 @@ function startGacha() {
 
     // 掉落动画
     capsuleEl.classList.add('dropping');
+    playSfx(sfxDrop);
 
     // 3. 扭蛋到达底部 → 爆开
     setTimeout(() => {
@@ -185,6 +250,7 @@ function startGacha() {
       const cy = window.innerHeight * 0.65;
       spawnParticles(cx, cy, 50);
       if (!animFrameId) animateParticles();
+      playSfx(sfxReveal);
 
       // 4. 显示结果卡片
       setTimeout(() => {

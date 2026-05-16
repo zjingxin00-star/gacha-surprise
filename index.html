@@ -13,6 +13,21 @@
 </head>
 <body>
 
+  <!-- 背景音乐 -->
+  <audio id="bgMusic" loop preload="auto">
+    <source src="bg-music.mp3" type="audio/mpeg">
+  </audio>
+  <!-- 音效 -->
+  <audio id="sfxShake" preload="auto">
+    <source src="sfx-shake.mp3" type="audio/mpeg">
+  </audio>
+  <audio id="sfxDrop" preload="auto">
+    <source src="sfx-drop.mp3" type="audio/mpeg">
+  </audio>
+  <audio id="sfxReveal" preload="auto">
+    <source src="sfx-reveal.mp3" type="audio/mpeg">
+  </audio>
+
   <!-- 背景装饰 -->
   <div class="bg-decoration">
     <div class="floating-heart heart-1">💕</div>
@@ -24,6 +39,11 @@
     <div class="floating-heart heart-7">💫</div>
     <div class="floating-heart heart-8">🎀</div>
   </div>
+
+  <!-- 音乐开关 -->
+  <button class="music-btn" id="musicBtn" title="音乐开关">
+    <span class="music-icon" id="musicIcon">🎵</span>
+  </button>
 
   <!-- 分享按钮 -->
   <button class="share-btn" id="shareBtn" title="分享给 Ta">
