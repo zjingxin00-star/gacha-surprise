@@ -25,26 +25,45 @@ const musicBtn   = document.getElementById('musicBtn');
 const musicIcon  = document.getElementById('musicIcon');
 
 let audioCtx = null;
+let audioUnlocked = false;
 let musicPlaying = false;
 let musicStarted = false;
 let bgmNodes = null;
 
-// 移动端必须等 resume() 完成才能出声
-async function ensureAudio() {
-  if (!audioCtx) {
+// 移动端音频解锁：必须在用户手势同步执行中创建 AudioContext
+// iOS Safari 在点击事件同步阶段创建 → 自动进入 running 状态
+// 如果 async/await 让出执行权 → 手势过期 → iOS 永久静音
+function unlockAudio() {
+  if (audioUnlocked) return;
+  try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  } catch (e) {
+    return;
   }
+  // 如果旧 context 还在 suspended，强制 resume（fire and forget）
   if (audioCtx.state === 'suspended') {
-    await audioCtx.resume();
+    audioCtx.resume();
   }
-  return audioCtx;
+  // iOS 无声缓冲技巧：播放一个零长度缓冲，强制激活音频硬件
+  var buf = audioCtx.createBuffer(1, 1, 22050);
+  var src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(audioCtx.destination);
+  src.start(0);
+  src.onended = function () { src.disconnect(); };
+  audioUnlocked = true;
+}
+
+// 确保 audioCtx 处于可用状态（在 setTimeout 回调里使用）
+function ctxOk() {
+  return audioCtx && audioCtx.state === 'running';
 }
 
 // --- 摇晃音效：短促机械咔嗒声 ---
 function playShakeSfx() {
-  if (!audioCtx || audioCtx.state !== 'running') return;
-  const ctx = audioCtx;
-  const now = ctx.currentTime;
+  if (!ctxOk()) return;
+  var ctx = audioCtx;
+  var now = ctx.currentTime;
   for (let i = 0; i < 8; i++) {
     const t = now + i * 0.06;
     const osc = ctx.createOscillator();
@@ -64,11 +83,11 @@ function playShakeSfx() {
 
 // --- 掉落音效：下滑音 ---
 function playDropSfx() {
-  if (!audioCtx || audioCtx.state !== 'running') return;
-  const ctx = audioCtx;
-  const now = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
+  if (!ctxOk()) return;
+  var ctx = audioCtx;
+  var now = ctx.currentTime;
+  var osc = ctx.createOscillator();
+  var gain = ctx.createGain();
   osc.type = 'sine';
   osc.frequency.setValueAtTime(600, now);
   osc.frequency.exponentialRampToValueAtTime(150, now + 0.5);
@@ -84,9 +103,9 @@ function playDropSfx() {
 
 // --- 爆开/揭示音效：魔法上行琶音 ---
 function playRevealSfx() {
-  if (!audioCtx || audioCtx.state !== 'running') return;
-  const ctx = audioCtx;
-  const now = ctx.currentTime;
+  if (!ctxOk()) return;
+  var ctx = audioCtx;
+  var now = ctx.currentTime;
   // 欢快的上行和弦：C5 E5 G5 C6
   const notes = [523, 659, 784, 1047];
   notes.forEach((freq, i) => {
@@ -192,9 +211,9 @@ function stopBgm() {
 }
 
 // --- 音乐控制 ---
-async function tryStartMusic() {
+function tryStartMusic() {
   if (musicStarted) return;
-  await ensureAudio();
+  unlockAudio();
   startBgm();
   musicPlaying = true;
   musicStarted = true;
@@ -203,9 +222,9 @@ async function tryStartMusic() {
   musicIcon.textContent = '🎵';
 }
 
-async function toggleMusic() {
+function toggleMusic() {
   if (!musicStarted) {
-    await tryStartMusic();
+    tryStartMusic();
     return;
   }
   if (musicPlaying) {
@@ -215,7 +234,7 @@ async function toggleMusic() {
     musicBtn.classList.add('muted');
     musicIcon.textContent = '🔇';
   } else {
-    await ensureAudio();
+    unlockAudio();
     startBgm();
     musicPlaying = true;
     musicBtn.classList.add('playing');
@@ -344,12 +363,12 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 // --- 扭蛋主流程 ---
-async function startGacha() {
+function startGacha() {
   if (isSpinning) return;
   isSpinning = true;
 
-  // 移动端必须在此处（点击事件内）唤醒 AudioContext
-  await ensureAudio();
+  // 移动端音频解锁：必须在用户手势同步阶段完成
+  unlockAudio();
 
   // 首次交互时启动背景音乐
   tryStartMusic();
